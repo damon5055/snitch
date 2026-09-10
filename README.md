@@ -1,87 +1,77 @@
-# Canary EDR Tripwire
+# snitch
 
-Defensive honey-file tripwire for **macOS** and **Linux**. It plants bait files under `~/.canary`, watches them with `watchdog`, attributes tampering via `lsof`, kills the offending process with `psutil`, logs to `security.log`, and optionally posts a Discord embed alert.
+lowercase defensive honey-file tripwire for **macOS** / **Linux**. Matrix-green TUI. Plants bait under `~/.snitch`, diffs tampering, kills the offending PID when it can, logs locally, pings Discord, and archives history to **Supabase** so the terminal stays clean.
 
-> Lab / personal-defense use only. Process termination requires sufficient privileges for the target PID. Do not run against production systems without understanding the kill behavior.
+> Lab / personal-defense use only. Auto-kill needs permission for the target PID.
 
-## Requirements
-
-- Python 3.9+
-- `lsof` on `PATH` (preinstalled on macOS; install via your package manager on Linux)
-- Dependencies in `requirements.txt`
+## Setup
 
 ```bash
 cd canary-edr
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 ```
 
-## Discord webhook setup (optional)
+Edit `.env`:
 
-1. In Discord: **Server Settings → Integrations → Webhooks → New Webhook**.
-2. Choose a channel, copy the webhook URL.
-3. Export it before starting the tool:
+| Var | Purpose |
+|-----|---------|
+| `DISCORD_WEBHOOK_URL` | Optional Discord alerts |
+| `SUPABASE_URL` | Your project API URL |
+| `SUPABASE_KEY` | anon / publishable key |
 
-```bash
-export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/ID/TOKEN"
-```
+### Supabase table (once)
 
-If unset, local logging and process kill still work; Discord posts are skipped.
+1. Open Supabase → **SQL Editor**
+2. Paste and run [`sql/snitch_events.sql`](sql/snitch_events.sql)
+3. Confirm table `snitch_events` exists
+
+Past events live in **Table Editor → snitch_events**. Sort by `created_at`, `action`, `file_name`, etc. Full diffs are in `content_diff`.
 
 ## Run
 
 ```bash
+source .venv/bin/activate
 python main.py
 ```
 
-You should see a Rich dashboard with:
+### TUI (kept lean)
 
-- **Status** — `EDR Tripwire Active` and monitored file count  
-- **Live Event Log** — reads/writes/blocks as a streaming table  
-- **System Stats** — CPU / memory for the canary process  
+- **status** — armed, bait path, kills, discord/supabase
+- **live** — this session only (max ~8 rows); shows **DELETE!** or **MODIFY** + short change summary
+- **archive peek** — last 5 rows from Supabase (`s` cycles sort incl. deletes)
+- keys: **`s`** cycle sort · **`r`** refresh · **ctrl+c** quit
 
-Press **Ctrl+C** to stop cleanly.
+### What gets stored in Supabase
 
-Honey files are created once under:
+| Table | Role |
+|-------|------|
+| `snitch_events` | Every hit: before/after text, unified diff, `is_delete`, PID, action |
+| `snitch_snapshots` | Live memory of each bait file — **updated on every modify**, marked deleted on delete |
 
-| Path | Role |
-|------|------|
-| `~/.canary/passwords.txt` | Credential bait |
-| `~/.canary/financials.docx` | Document bait |
-| `~/.canary/private_keys.pem` | Key bait |
+Sort history in **Table Editor → snitch_events**. Check current bait contents in **snitch_snapshots**.
 
-## Safe attack simulation
+## Simulate
 
-With the tripwire running, open a **second terminal** and append to a honey file:
-
-```bash
-echo "hack" >> ~/.canary/passwords.txt
-```
-
-Or delete one:
+Second terminal:
 
 ```bash
-rm ~/.canary/private_keys.pem
+echo "hack" >> ~/.snitch/passwords.txt
 ```
 
-Expected behavior:
+Or open `~/.snitch/passwords.txt` in Finder (**Go → Go to Folder…** → `/Users/YOU/.snitch`), edit, save.
 
-1. The TUI **Live Event Log** shows `MODIFIED` / `DELETED`.
-2. If `lsof` can attribute an open PID, that process is killed and the row shows `KILLED`.
-3. `security.log` records the full event.
-4. If `DISCORD_WEBHOOK_URL` is set, Discord receives an embed titled **🛑 Ransomware Attack Neutralized**.
-
-**Notes for simulation:** short-lived shells (`echo >> file`) often exit before `lsof` runs, so you may see `unattributed` / `LOGGED` instead of a kill. To exercise attribution, hold the file open longer, e.g.:
+Hold the file open to exercise kill attribution:
 
 ```bash
-# keeps the file open ~10s while you watch the dashboard
-python3 -c "import time; f=open('$HOME/.canary/passwords.txt','a'); f.write('probe\n'); f.flush(); time.sleep(10)"
+python3 -c "import time; f=open('$HOME/.snitch/passwords.txt','a'); f.write('probe\n'); f.flush(); time.sleep(10)"
 ```
 
-Re-run `python main.py` after deletion tests — missing honey files are recreated on startup.
+## Notes
 
-## Privacy
-
-- Do not commit real Discord webhook URLs.
-- `security.log` may contain process command lines; treat it as sensitive.
+- Bait files are decoys in `~/.snitch` (not your real secrets).
+- Old `~/.canary` from earlier builds is unused; safe to `rm -rf ~/.canary`.
+- Diffs for text files show `+`/`-` line changes; binaries log size + short hashes.
+- Do not commit `.env` or real webhook/keys.
