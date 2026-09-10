@@ -1,6 +1,6 @@
 # snitch
 
-lowercase defensive honey-file tripwire for **macOS** / **Linux**. Matrix-green TUI. Plants bait under `~/.snitch`, diffs tampering, kills the offending PID when it can, logs locally, pings Discord, and archives history to **Supabase** so the terminal stays clean.
+defensive honey-file tripwire for **macOS** / **Linux**. Matrix-green TUI. Plants bait under `~/.snitch`, diffs tampering, kills the offending PID when it can, logs locally, pings Discord, and archives history to **Supabase** so the terminal stays clean.
 
 > Lab / personal-defense use only. Auto-kill needs permission for the target PID.
 
